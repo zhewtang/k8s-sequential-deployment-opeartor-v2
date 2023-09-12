@@ -1,0 +1,12 @@
+apiVersion: batch.zhewtang.github.io/v1
+kind: SequentialJob
+metadata:
+  labels:
+    app.kubernetes.io/name: sequentialjob
+    app.kubernetes.io/instance: sequentialjob-sample
+    app.kubernetes.io/part-of: k8s-sequential-deployment-opeartor-v2
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: k8s-sequential-deployment-opeartor-v2
+  name: sequentialjob-sample
+spec:
+  # TODO(user): Add fields here
