@@ -1,0 +1,30 @@
+apiVersion: batch.zhewtang.github.io/v1
+kind: SequentialJob
+metadata:
+  labels:
+    app.kubernetes.io/name: sequentialjob
+    app.kubernetes.io/instance: sequentialjob-sample
+    app.kubernetes.io/part-of: k8s-sequential-deployment-opeartor-v2
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: k8s-sequential-deployment-opeartor-v2
+  name: sequentialjob-bad
+spec:
+  jobs:
+    - spec:
+        containers:
+        - name: job1
+          image: busybox
+          command: ["sleep", "10"]
+        restartPolicy: Never
+    - spec:
+        containers:
+        - name: job2
+          image: busybox
+          command: ["exit", "1"]
+        restartPolicy: Never
+    - spec:
+        containers:
+        - name: job3
+          image: busybox
+          command: ["sleep", "1"]
+        restartPolicy: Never
