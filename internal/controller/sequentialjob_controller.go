@@ -175,8 +175,7 @@ func (r *SequentialJobReconciler) reconcileChildJob(ctx context.Context, sj *zhe
 			Template:     sj.Spec.Jobs[i],
 		},
 	}
-	j.Name = getJobName(sj, i)
-	j.Namespace = sj.Namespace
+
 	if err := ctrl.SetControllerReference(sj, &j, r.Scheme); err != nil {
 		return fmt.Errorf("failed to set controller reference: %w", err)
 	}
