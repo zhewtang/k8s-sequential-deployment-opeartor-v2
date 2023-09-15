@@ -60,7 +60,6 @@ func (r *SequentialJobReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-
 	// step 2: reconcile child jobs
 	if err := r.reconcileChildJobs(ctx, &sj); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile child jobs: %w", err)
