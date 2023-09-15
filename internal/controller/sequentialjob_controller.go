@@ -43,33 +43,30 @@ type SequentialJobReconciler struct {
 //+kubebuilder:rbac:groups=batch.zhewtang.github.io,resources=sequentialjobs/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=batch.zhewtang.github.io,resources=sequentialjobs/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the SequentialJob object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.15.0/pkg/reconcile
+// reconcile the SequentialJob
 func (r *SequentialJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling SequentialJob")
 
+	// step 1: get the SequentialJob
 	var sj zhewtangbatchv1.SequentialJob
 	if err := r.Get(ctx, req.NamespacedName, &sj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// ignore when the SequentialJob is being deleted
 	if !sj.DeletionTimestamp.IsZero() {
 		logger.Info("SequentialJob deleted")
 		return ctrl.Result{}, nil
 	}
 
+
+	// step 2: reconcile child jobs
 	if err := r.reconcileChildJobs(ctx, &sj); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile child jobs: %w", err)
 	}
 
+	// step 3: reconcile status
 	if err := r.reconcileJobState(ctx, &sj); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile status: %w", err)
 	}
@@ -78,17 +75,23 @@ func (r *SequentialJobReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
+// reconcileChildJobs reconciles the child jobs: linearly create child jobs until one fails or all complete
 func (r *SequentialJobReconciler) reconcileChildJobs(ctx context.Context, sj *zhewtangbatchv1.SequentialJob) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling child jobs")
 
+	// iterate through the child jobs defined in the SequentialJob resource
 	for i := range sj.Spec.Jobs {
 		var j batchv1.Job
 		jobName := getJobName(sj, i)
+
+		// step 1: check if the child job exists
 		err := r.Get(ctx, client.ObjectKey{
 			Namespace: sj.Namespace,
 			Name:      jobName,
 		}, &j)
+
+		// step 2: if the child job does not exist, create it by calling reconcileChildJob
 		if apierrors.IsNotFound(err) {
 			logger.Info("Child job does not exist. Creating child job", "job", jobName, "index", i)
 			return r.reconcileChildJob(ctx, sj, i)
@@ -96,6 +99,7 @@ func (r *SequentialJobReconciler) reconcileChildJobs(ctx context.Context, sj *zh
 			return fmt.Errorf("failed to get child job[%d] %q: %w", i, jobName, err)
 		}
 
+		// step 3: if the child job exists, check its state
 		switch jobStateFor(j) {
 		case zhewtangbatchv1.Comleted:
 			logger.Info("Child job completed", "job", jobName, "index", i)
@@ -114,13 +118,15 @@ func (r *SequentialJobReconciler) reconcileChildJobs(ctx context.Context, sj *zh
 	return nil
 }
 
+// getJobName returns the formatted name of the child job
 func getJobName(sj *zhewtangbatchv1.SequentialJob, i int) string {
 	return fmt.Sprintf("%s-%d", sj.Name, i)
 }
 
+// reconcileJobState reconciles the status of the SequentialJob
 func (r *SequentialJobReconciler) reconcileJobState(ctx context.Context, sj *zhewtangbatchv1.SequentialJob) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Updating state")
+	logger.Info("Reconciling the status of the SequentialJob")
 
 	var childStates []zhewtangbatchv1.ChildJobState
 	for i := range sj.Spec.Jobs {
@@ -143,7 +149,7 @@ func (r *SequentialJobReconciler) reconcileJobState(ctx context.Context, sj *zhe
 
 	newStatus := zhewtangbatchv1.SequentialJobStatus{
 		ChildJobStates: childStates,
-		OverallState:   overallJobState(childStates),
+		OverallState:   getOverallJobStateFrom(childStates),
 	}
 
 	if equality.Semantic.DeepEqual(sj.Status, newStatus) {
@@ -184,11 +190,12 @@ func (r *SequentialJobReconciler) reconcileChildJob(ctx context.Context, sj *zhe
 		return fmt.Errorf("failed to create child job: %w", err)
 	}
 
-	logger.Info("Created child job", "job", jobName, "index", i)
+	logger.Info("Child job created", "job", jobName, "index", i)
 
 	return nil
 }
 
+// jobStateFor returns the JobState based on the batch job conditions
 func jobStateFor(j batchv1.Job) zhewtangbatchv1.JobState {
 	for _, c := range j.Status.Conditions {
 		if c.Type == "Complete" && c.Status == "True" {
@@ -202,7 +209,8 @@ func jobStateFor(j batchv1.Job) zhewtangbatchv1.JobState {
 	return zhewtangbatchv1.Unknown
 }
 
-func overallJobState(cjs []zhewtangbatchv1.ChildJobState) zhewtangbatchv1.JobState {
+// getOverallJobStateFrom returns the overall job state based on the child jobs states
+func getOverallJobStateFrom(cjs []zhewtangbatchv1.ChildJobState) zhewtangbatchv1.JobState {
 	for _, js := range cjs {
 		if js.JobState == zhewtangbatchv1.Suspended {
 			return zhewtangbatchv1.Suspended
